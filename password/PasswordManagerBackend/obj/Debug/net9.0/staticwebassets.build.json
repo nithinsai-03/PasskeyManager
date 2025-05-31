@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "H+7+0icqaSCu/2R2wz+ybl6RxoA3jiwkQWuw2Whtn6k=",
+  "Source": "PasswordManagerBackend",
+  "BasePath": "_content/PasswordManagerBackend",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sleek Password Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom font - Inter */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Enhanced background gradient */
+            background-image: linear-gradient(to bottom right, #f0f4f8, #d9e2ec); 
+        }
+
+        /* Additional custom styles */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 20px;
+            border-radius: 8px;
+            /* Stronger shadow for toast */
+            box-shadow: 0 6px 20px rgba(0,0,0,0.2); 
+            font-size: 0.95rem;
+            font-weight: 500; /* Slightly bolder text */
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out;
+            max-width: 90%;
+            text-align: center;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        .toast.success {
+            background-color: #28a745; /* Green */
+            color: white;
+        }
+        .toast.error {
+            background-color: #dc3545; /* Red */
+            color: white;
+        }
+        .table-cell-truncate {
+            max-width: 160px; /* Adjusted slightly */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        @media (max-width: 640px) {
+            .table-cell-truncate {
+                max-width: 100px;
+            }
+        }
+    </style>
+</head>
+<body class="text-slate-800 flex flex-col items-center justify-center min-h-screen p-4 selection:bg-sky-200 selection:text-sky-900">
+
+    <div class="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-lg border border-slate-200">
+        <header class="mb-6 sm:mb-8 text-center">
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-blue-700">Password Guardian</h1>
+            <p class="text-base text-slate-600 mt-2">Your secure local password vault.</p>
+        </header>
+
+        <form id="passwordForm" class="space-y-5">
+            <div>
+                <label for="website" class="block text-sm font-semibold text-slate-700 mb-1">Website/Service Name</label>
+                <input type="text" id="website" name="website" required
+                       class="w-full px-4 py-2.5 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-3 focus:ring-blue-400 focus:border-blue-400 transition duration-200 ease-in-out placeholder-slate-400"
+                       placeholder="e.g., Google, Facebook">
+            </div>
+
+            <div>
+                <label for="username" class="block text-sm font-semibold text-slate-700 mb-1">Username/Email</label>
+                <input type="text" id="username" name="username" required
+                       class="w-full px-4 py-2.5 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-3 focus:ring-blue-400 focus:border-blue-400 transition duration-200 ease-in-out placeholder-slate-400"
+                       placeholder="e.g., user@example.com">
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-semibold text-slate-700 mb-1">Password</label>
+                <input type="password" id="password" name="password" required
+                       class="w-full px-4 py-2.5 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-3 focus:ring-blue-400 focus:border-blue-400 transition duration-200 ease-in-out placeholder-slate-400"
+                       placeholder="Enter a strong password">
+            </div>
+
+            <button type="submit" id="saveButton"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200 ease-in-out transform active:scale-95">
+                Save Password
+            </button>
+        </form>
+
+        <div id="toast-container"></div>
+
+        <div class="mt-8 sm:mt-10 pt-6 border-t border-slate-200">
+            <h2 class="text-xl sm:text-2xl font-bold text-slate-700 mb-4">Saved Entries</h2>
+            <div id="entriesList" class="space-y-3 max-h-60 overflow-y-auto bg-slate-50 p-4 rounded-lg shadow-inner border border-slate-200">
+                <p class="text-slate-500 italic">No entries saved yet.</p>
+            </div>
+            <button id="clearAllButton"
+                    class="mt-4 w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200 ease-in-out transform active:scale-95 text-sm">
+                Clear All Saved Entries
+            </button>
+        </div>
+    </div>
+
+    <footer class="mt-8 text-center text-xs text-slate-500">
+        <p>&copy; 2024 Password Guardian Demo. Connected to local C# backend.</p>
+    </footer>
+
+    <script>
+        // --- Configuration ---
+        // !!! IMPORTANT: This URL MUST match your running ASP.NET Core backend's URL !!!
+        // Based on your last output, it's http://localhost:5288
+        const BACKEND_API_BASE_URL = 'http://localhost:5288/api/Passwords'; 
+
+        const passwordForm = document.getElementById('passwordForm');
+        const websiteInput = document.getElementById('website');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const entriesListDiv = document.getElementById('entriesList');
+        const saveButton = document.getElementById('saveButton');
+        const clearAllButton = document.getElementById('clearAllButton');
+        const toastContainer = document.getElementById('toast-container');
+
+        const PBKDF2_ITERATIONS = 100000; // Match C# backend
+        const SALT_LENGTH_BYTES = 16;     // Match C# backend (128 bits)
+        const HASH_LENGTH_BITS = 256;     // Match C# backend (32 bytes)
+
+        // --- Utility Functions ---
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            toastContainer.appendChild(toast);
+            
+            // Trigger reflow to enable transition
+            void toast.offsetWidth; 
+            toast.classList.add('show');
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300); // Allow fade out transition
+            }, 3000);
+        }
+
+        // Convert ArrayBuffer to Base64 string
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary);
+        }
+
+        // Convert Base64 string to ArrayBuffer (not strictly needed for this app, but good for completeness)
+        function base64ToArrayBuffer(base64) {
+            const binary_string = window.atob(base64);
+            const len = binary_string.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary_string.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+        
+        // --- Hashing Logic (PBKDF2) - Stays on frontend to pre-hash before sending ---
+        async function hashPasswordWithSalt(password, salt) {
+            try {
+                const passwordEncoder = new TextEncoder();
+                const passwordBuffer = passwordEncoder.encode(password);
+
+                const importedKey = await crypto.subtle.importKey(
+                    'raw',
+                    passwordBuffer,
+                    { name: 'PBKDF2' },
+                    false, // not extractable
+                    ['deriveBits']
+                );
+
+                const derivedBits = await crypto.subtle.deriveBits(
+                    {
+                        name: 'PBKDF2',
+                        salt: salt, // salt is already a Uint8Array
+                        iterations: PBKDF2_ITERATIONS,
+                        hash: 'SHA-256'
+                    },
+                    importedKey,
+                    HASH_LENGTH_BITS // Length of the derived key in bits
+                );
+                
+                return arrayBufferToBase64(derivedBits);
+            } catch (error) {
+                console.error("Error hashing password:", error);
+                showToast("Error during password hashing.", "error");
+                throw error; // Re-throw to handle in calling function
+            }
+        }
+
+        // --- Backend API Interaction ---
+        async function fetchEntriesFromBackend() {
+            try {
+                const response = await fetch(BACKEND_API_BASE_URL);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const entries = await response.json();
+                return entries;
+            } catch (error) {
+                console.error("Error fetching entries:", error);
+                showToast("Failed to load entries from server.", "error");
+                return [];
+            }
+        }
+
+        async function saveEntryToBackend(entry) {
+            try {
+                const response = await fetch(BACKEND_API_BASE_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(entry)
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+                }
+                showToast('Password entry saved successfully!', 'success');
+            } catch (error) {
+                console.error("Error saving entry:", error);
+                showToast(`Failed to save password entry: ${error.message}`, 'error');
+                throw error; // Re-throw for handleFormSubmit to catch
+            }
+        }
+
+        async function deleteEntryFromBackend(id) {
+            try {
+                const response = await fetch(`${BACKEND_API_BASE_URL}/${id}`, {
+                    method: 'DELETE'
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                showToast('Entry deleted successfully.', 'success');
+            } catch (error) {
+                console.error("Error deleting entry:", error);
+                showToast(`Failed to delete entry: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        async function clearAllEntriesFromBackend() {
+            try {
+                const response = await fetch(`${BACKEND_API_BASE_URL}/clearall`, {
+                    method: 'DELETE'
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                showToast('All entries cleared successfully.', 'success');
+            } catch (error) {
+                console.error("Error clearing all entries:", error);
+                showToast(`Failed to clear all entries: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        // --- UI Rendering ---
+        async function renderEntries() {
+            entriesListDiv.innerHTML = '<p class="text-slate-500 italic">Loading entries...</p>'; // Show loading state
+            const entries = await fetchEntriesFromBackend();
+            entriesListDiv.innerHTML = ''; // Clear current list
+
+            if (entries.length === 0) {
+                entriesListDiv.innerHTML = '<p class="text-slate-500 italic">No entries saved yet.</p>';
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.className = 'min-w-full divide-y divide-slate-200 rounded-lg overflow-hidden border border-slate-200'; /* Added overflow-hidden and border */
+            
+            const thead = document.createElement('thead');
+            thead.className = 'bg-slate-100'; /* Lighter header background */
+            thead.innerHTML = `
+                <tr>
+                    <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider rounded-tl-lg">Website</th>
+                    <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Username</th>
+                    <th scope="col" class="px-4 py-3 text-center text-xs font-semibold text-slate-700 uppercase tracking-wider rounded-tr-lg">Action</th>
+                </tr>
+            `;
+            table.appendChild(thead);
+            
+            const tbody = document.createElement('tbody');
+            tbody.className = 'bg-white divide-y divide-slate-100';
+            entries.forEach((entry) => {
+                const row = tbody.insertRow();
+                row.className = 'hover:bg-slate-50 transition-colors duration-150';
+                
+                const cellWebsite = row.insertCell();
+                cellWebsite.className = 'px-4 py-3 table-cell-truncate text-sm font-medium text-slate-800';
+                cellWebsite.textContent = entry.website;
+                cellWebsite.title = entry.website; 
+
+                const cellUsername = row.insertCell();
+                cellUsername.className = 'px-4 py-3 table-cell-truncate text-sm text-slate-700';
+                cellUsername.textContent = entry.username;
+                cellUsername.title = entry.username;
+
+                const cellAction = row.insertCell();
+                cellAction.className = 'px-4 py-3 text-center';
+                const deleteButton = document.createElement('button');
+                deleteButton.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500 hover:text-red-700 transition-colors transform hover:scale-110">
+                        <path d="M3 6h18"></path>
+                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                        <line x1="10" y1="11" x2="10" y2="17"></line>
+                        <line x1="14" y1="11" x2="14" y2="17"></line>
+                    </svg>`;
+                deleteButton.title = "Delete entry";
+                deleteButton.className = "p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1";
+                deleteButton.onclick = () => handleDeleteEntry(entry.id); 
+                cellAction.appendChild(deleteButton);
+            });
+            table.appendChild(tbody);
+            entriesListDiv.appendChild(table);
+        }
+
+        async function handleFormSubmit(event) {
+            event.preventDefault();
+            saveButton.disabled = true;
+            saveButton.textContent = 'Saving...';
+            saveButton.classList.add('opacity-70', 'cursor-not-allowed'); // Visual feedback
+
+            const website = websiteInput.value.trim();
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value; 
+
+            if (!website || !username || !password) {
+                showToast('All fields are required.', 'error');
+                saveButton.disabled = false;
+                saveButton.textContent = 'Save Password';
+                saveButton.classList.remove('opacity-70', 'cursor-not-allowed');
+                return;
+            }
+
+            try {
+                const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH_BYTES));
+                const hashedPassword = await hashPasswordWithSalt(password, salt);
+
+                const newEntry = {
+                    id: crypto.randomUUID(), 
+                    website: website,
+                    username: username,
+                    hashedPassword: hashedPassword, 
+                    salt: arrayBufferToBase64(salt) 
+                };
+
+                await saveEntryToBackend(newEntry);
+                passwordForm.reset();
+                await renderEntries(); 
+            } catch (error) {
+                if (!toastContainer.querySelector('.toast.error')) { 
+                    showToast('Failed to save password entry.', 'error');
+                }
+                console.error("Error in form submission:", error);
+            } finally {
+                saveButton.disabled = false;
+                saveButton.textContent = 'Save Password';
+                saveButton.classList.remove('opacity-70', 'cursor-not-allowed');
+            }
+        }
+
+        async function handleDeleteEntry(id) {
+            if (!confirm('Are you sure you want to delete this entry?')) {
+                return;
+            }
+            try {
+                await deleteEntryFromBackend(id);
+                await renderEntries(); 
+            } catch (error) {
+                // Error already handled by deleteEntryFromBackend
+            }
+        }
+        
+        async function handleClearAllEntries() {
+            const currentEntries = await fetchEntriesFromBackend(); 
+            if (currentEntries.length === 0) {
+                showToast('No entries to clear.', 'error');
+                return;
+            }
+
+            if (confirm('Are you sure you want to delete ALL saved entries? This action cannot be undone.')) {
+                try {
+                    await clearAllEntriesFromBackend();
+                    await renderEntries(); 
+                } catch (error) {
+                    // Error already handled by clearAllEntriesFromBackend
+                }
+            }
+        }
+
+        // --- Event Listeners ---
+        passwordForm.addEventListener('submit', handleFormSubmit);
+        clearAllButton.addEventListener('click', handleClearAllEntries);
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            renderEntries();
+        });
+    </script>
+</body>
+</html>
